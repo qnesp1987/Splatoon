@@ -2,7 +2,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<Authors>NightmareXIV</Authors>
-		<Version>3.8.4.9</Version>
+		<Version>3.9.0.16</Version>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -67,6 +67,7 @@
 	  <ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
 	  <ProjectReference Include="..\NightmareUI\NightmareUI\NightmareUI.csproj" />
     <ProjectReference Include="..\ffxiv_pictomancy\Pictomancy\Pictomancy.csproj" />
+    <ProjectReference Include="..\WrathCombo.API\WrathCombo.API.csproj" />
   </ItemGroup>
 
 	<ItemGroup>
@@ -136,6 +137,9 @@
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </None>
 	  <None Update="LanguageKorean.ini">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
+	  <None Update="ProjectionGlobalBlacklist.txt">
 	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 	  </None>
 	  <None Update="res\fxdonut.avfx">

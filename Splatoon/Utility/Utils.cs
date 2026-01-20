@@ -1,4 +1,5 @@
-﻿using Dalamud.Game.ClientState.Objects.SubKinds;
+﻿using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Statuses;
 using Dalamud.Utility;
 using ECommons;
@@ -6,22 +7,44 @@ using ECommons.ExcelServices;
 using ECommons.GameFunctions;
 using ECommons.LanguageHelpers;
 using ECommons.MathHelpers;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Client.UI.Arrays;
 using Newtonsoft.Json;
+using Splatoon.Memory;
 using Splatoon.RenderEngines;
 using Splatoon.Serializables;
 using Splatoon.Structures;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using TerraFX.Interop.Windows;
+using S = Splatoon.Services.S;
 
 namespace Splatoon.Utility;
 
 public static unsafe class Utils
 {
+    public static GameObject* ResolvePronounBPO(string p)
+    {
+        var ret = ExtendedPronoun.Resolve(p);
+        if(Svc.Condition[ConditionFlag.DutyRecorderPlayback] && BasePlayerOverride != "")
+        {
+            if(p == "<me>")
+            {
+                return (GameObject*)BasePlayer.Struct();
+            }
+            else if(p == "<target>")
+            {
+                return (GameObject*)(BasePlayer.TargetObject?.Address);
+            }
+        }
+        return ret;
+    }
+
     public static Vector3 ToXZY(this Vector3 xyzVector)
     {
         return new(xyzVector.X, xyzVector.Z, xyzVector.Y);
@@ -129,6 +152,14 @@ public static unsafe class Utils
                 : Splatoon.CapturedPositions.SafeSelect(details[1])?.SafeSelect(details[2]);
             return list;
         }
+        if(placeholder.StartsWith("<objectid:"))
+        {
+            var details = placeholder[1..^1].Split(":");
+            if(uint.TryParse(details[1], details[1].StartsWith("0x") ? NumberStyles.HexNumber : default, null, out var result))
+            {
+                return Svc.Objects.Where(x => x.ObjectId == result).Select(x => x.Position).ToList();
+            }
+        }
         if(placeholder == "<tethered>")
         {
             var ret = new List<Vector3>();
@@ -168,7 +199,7 @@ public static unsafe class Utils
             }
             return ret;
         }
-        var obj = ExtendedPronoun.Resolve(placeholder);
+        var obj = Utils.ResolvePronounBPO(placeholder);
         if(obj != null)
         {
             return [obj->Position];
@@ -389,9 +420,51 @@ public static unsafe class Utils
 
     private static bool IsNullOrEmpty(this string s) => GenericHelpers.IsNullOrEmpty(s);
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="obj"></param>
+    /// <param name="e"></param>
+    /// <returns>Radians</returns>
     public static float GetRotationWithOverride(this IGameObject obj, Element e)
     {
-        if(!e.RotationOverride) return obj.Rotation;
+        if(!e.RotationOverride)
+        {
+            if(e.UseCastRotation && obj is IBattleChara b)
+            {
+                if(b.IsCasting() && b.CastActionId.EqualsAny(e.refActorCastId))
+                {
+                    if(S.Projection.LastCast.TryGetValue(obj.ObjectId, out var casts) && casts.TryGetValue(new(ActionType.Action, b.CastActionId), out var packet))
+                    {
+                        return packet.Rotation;
+                    }
+                }
+                else
+                {
+                    foreach(var castId in e.refActorCastId)
+                    {
+                        if(S.Projection.LastCast.TryGetValue(obj.ObjectId, out var casts))
+                        {
+                            if(casts.TryGetValue(new(ActionType.Action, castId), out var packet))
+                            {
+                                if(AttachedInfo.TryGetCastTime(b.Address, castId, out var castTime))
+                                {
+                                    if(castTime.InRange(e.refActorCastTimeMin, e.refActorCastTimeMax))
+                                    {
+                                        return packet.Rotation;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return obj.Rotation;
+        }
+        if(e.RotationOverrideAngleOnlyMode)
+        {
+            return (180f + e.RotationOverrideAddAngle).DegToRad();
+        }
         return (180f - MathHelper.GetRelativeAngle(obj.Position.ToVector2(), e.RotationOverridePoint.ToVector2()) + e.RotationOverrideAddAngle).DegToRad();
     }
 
@@ -809,7 +882,7 @@ public static unsafe class Utils
     public static float GetAdditionalRotation(this Element e, float cx, float cy, float angle)
     {
         if(!e.FaceMe) return e.AdditionalRotation + angle;
-        return (e.AdditionalRotation.RadiansToDegrees() + MathHelper.GetRelativeAngle(new Vector2(cx, cy), Svc.ClientState.LocalPlayer.Position.ToVector2())).DegreesToRadians();
+        return (e.AdditionalRotation.RadiansToDegrees() + MathHelper.GetRelativeAngle(new Vector2(cx, cy), BasePlayer.Position.ToVector2())).DegreesToRadians();
     }
 
     public static bool StartsWithIgnoreCase(this string a, string b)
@@ -863,11 +936,11 @@ public static unsafe class Utils
     //because Dalamud changed Y and Z in actor positions I have to do emulate old behavior to not break old presets
     public static Vector3 GetPlayerPositionXZY()
     {
-        if(Svc.ClientState.LocalPlayer != null)
+        if(BasePlayer != null)
         {
             if(PlayerPosCache == null)
             {
-                PlayerPosCache = XZY(Svc.ClientState.LocalPlayer.Position);
+                PlayerPosCache = XZY(BasePlayer.Position);
             }
             return PlayerPosCache.Value;
         }

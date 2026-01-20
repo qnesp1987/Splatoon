@@ -48,7 +48,7 @@ public class Element
 
     public string Name = "";
     public InternationalString InternationalName = new();
-    [NonSerialized] internal string GUID = Guid.NewGuid().ToString();
+    [NonSerialized] internal Guid GUID = Guid.NewGuid();
     /// <summary>
     /// 0: Object at fixed coordinates |
     /// 1: Object relative to actor position | 
@@ -218,6 +218,7 @@ public class Element
     [DefaultValue(false)] public bool ConditionalInvert = false;
     [DefaultValue(false)] public bool ConditionalReset = false;
     [DefaultValue(false)] public bool RotationOverride = false;
+    [DefaultValue(false)] public bool RotationOverrideAngleOnlyMode = false;
     public Point2 RotationOverridePoint = new();
     [DefaultValue(0f)] public float RotationOverrideAddAngle = 0f;
     public HashSet<ObjectKind> ObjectKinds = [];
@@ -229,7 +230,20 @@ public class Element
     public List<MapEffectData> MapEffects = [];
     [DefaultValue(false)] public bool MapEffectInvert = false;
     [DefaultValue(false)] public bool MapEffectAnd = false;
+    [DefaultValue(false)] public bool UseCastRotation = false;
+    [DefaultValue(false)] public bool UseCastPosition = false;
+    [DefaultValue(false)] public bool UseCastTarget = false;
+    [DefaultValue(null)] public bool? IsDead = null;
+    [DefaultValue(EnumerationType.None)] public EnumerationType Enumeration = EnumerationType.None;
+    public List<int> EnumerationOrder = [];
+    public Point2 EnumerationCenter = Vector2.Zero.ToPoint2();
+    public Point2 EnumerationStart = Vector2.Zero.ToPoint2();
 
+    internal float CastFractionOverride = 0f;
+
+    public bool ShouldSerializeEnumerationCenter() => Enumeration != EnumerationType.None;
+    public bool ShouldSerializeEnumerationStart() => Enumeration != EnumerationType.None;
+    public bool ShouldSerializeEnumerationOrder() => Enumeration != EnumerationType.None;
     public bool ShouldSerializeMapEffects() => MapEffects.Count > 0;
     public bool ShouldSerializeHitboxRadiusMin() => HitboxRadiusMin != 0f && UseHitboxRadius;
     public bool ShouldSerializeHitboxRadiusMax() => HitboxRadiusMax != 0f && UseHitboxRadius;
@@ -238,6 +252,7 @@ public class Element
     public bool ShouldSerializeObjectKinds() => ObjectKinds.Count > 0;
     public bool ShouldSerializeRotationOverridePoint() => RotationOverride;
     public bool ShouldSerializeRotationOverrideAddAngle() => RotationOverride;
+    public bool ShouldSerializeRotationOverrideAngleOnlyMode() => RotationOverride;
     public bool ShouldSerializeInternationalName() => !InternationalName.IsEmpty();
     public bool ShouldSerializeConditionalInvert() => Conditional;
     public bool ShouldSerializeConditionalReset() => Conditional;

@@ -359,6 +359,9 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
+# JetBrains Rider
+.idea/
+
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /SplatoonScripts/Duties/Endwalker/The Omega Protocol/Dancer Auto Step.cs
@@ -387,3 +390,8 @@ FodyWeavers.xsd
 /SplatoonScripts/Duties/Dawntrail/Quantum 40/QuantumMitigationsV2.cs
 /SplatoonScripts/Duties/Dawntrail/The Futures Rewritten/FruMitV2.cs
 /SplatoonScripts/Duties/Dawntrail/Quantum 40/SgeMigitations.cs
+/SplatoonScripts/Generic/LockFaceEx.cs
+/SplatoonScripts/Generic/BypassRotationCheck.cs
+/SplatoonScripts/Generic/AACHWMit.cs
+/SplatoonScripts/Duties/Dawntrail/M12S P1 Snake.cs
+/SplatoonScripts/Duties/Dawntrail/M11S Stampede Bait.cs

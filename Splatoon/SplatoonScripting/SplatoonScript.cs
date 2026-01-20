@@ -6,12 +6,14 @@ using ECommons.Configuration;
 using ECommons.Hooks;
 using ECommons.Hooks.ActionEffectTypes;
 using ECommons.LanguageHelpers;
+using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Common.Configuration;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Newtonsoft.Json;
 using Reloaded.Hooks.Definitions.Structs;
 using Splatoon.Gui.Scripting;
+using Splatoon.Memory;
 using System.Diagnostics.CodeAnalysis;
 using static Dalamud.Interface.Utility.Raii.ImRaii;
 
@@ -24,6 +26,16 @@ public abstract class SplatoonScript
     {
         Controller = new(this);
     }
+
+    /// <summary>
+    /// Provides per-script throttlers on demand
+    /// </summary>
+    public EzThrottler<string> EzThrottler => field ??= new();
+
+    /// <summary>
+    /// Provides per-script throttlers on demand
+    /// </summary>
+    public FrameThrottler<string> FrameThrottler => field ??= new();
 
     /// <summary>
     /// Controller provides easy access to various helper functions that may be helpful for your script.
@@ -140,6 +152,13 @@ public abstract class SplatoonScript
     public virtual void OnStartingCast(uint source, uint castId) { }
 
     /// <summary>
+    /// Will be called when a hostile object starts casting. This method will only be called if a script is enabled.
+    /// </summary>
+    /// <param name="sourceId">Source entity id</param>
+    /// <param name="packet">Packet</param>
+    public virtual unsafe void OnStartingCast(uint sourceId, PacketActorCast* packet) { }
+
+    /// <summary>
     /// Will be called whenever plugin processes a message. These are the same messages which layout trigger system receives. This method will only be called if a script is enabled.
     /// </summary>
     /// <param name="Message"></param>
@@ -168,9 +187,11 @@ public abstract class SplatoonScript
     /// <param name="p4"></param>
     /// <param name="p5"></param>
     /// <param name="p6"></param>
+    /// <param name="p7"></param>
+    /// <param name="p8"></param>
     /// <param name="targetId"></param>
     /// <param name="replaying"></param>
-    public virtual void OnActorControl(uint sourceId, uint command, uint p1, uint p2, uint p3, uint p4, uint p5, uint p6, ulong targetId, byte replaying) { }
+    public virtual void OnActorControl(uint sourceId, uint command, uint p1, uint p2, uint p3, uint p4, uint p5, uint p6, uint p7, uint p8, ulong targetId, byte replaying) { }
 
     [Obsolete($"Please use {nameof(OnActionEffectEvent)}")]
     public virtual void OnActionEffect(uint ActionID, ushort animationID, ActionEffectType type, uint sourceID, ulong targetOID, uint damage) { }
@@ -247,6 +268,7 @@ public abstract class SplatoonScript
         } ?? en ?? jp ?? de ?? fr ?? cn ?? "<null>";
     }
 
+    internal string? MassExport = null;
     internal unsafe void DrawConfigurations()
     {
         ImGuiEx.LineCentered(() =>
@@ -254,17 +276,29 @@ public abstract class SplatoonScript
             if(ImGuiEx.IconButtonWithText(FontAwesomeIcon.Plus, "Add new configuration".Loc()))
             {
                 var newKey = InternalData.GetFreeConfigurationKey();
-                P.Config.ScriptConfigurationNames.GetOrCreate(InternalData.FullName)[newKey] = "New configuration".Loc();
+                var newNamePref = "New configuration".Loc();
+                var newName = newNamePref;
+                int i = 2;
+                var dict = P.Config.ScriptConfigurationNames.GetOrCreate(InternalData.FullName);
+                while(dict.ContainsValue(newName))
+                {
+                    newName = $"{newNamePref} ({i})";
+                    i++;
+                }
+                dict[newKey] = newName;
             }
             ImGui.SameLine();
             if(ImGuiEx.IconButtonWithText(FontAwesomeIcon.Paste, "Paste from clipboard".Loc()))
             {
                 try
                 {
-                    var m = JsonConvert.DeserializeObject<ExportedScriptConfiguration>(Paste()!) ?? throw new NullReferenceException();
-                    if(!ApplyExportedConfiguration(m, out var error))
+                    foreach(var x in Paste()!.Split("\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
-                        Notify.Error(error);
+                        var m = JsonConvert.DeserializeObject<ExportedScriptConfiguration>(x) ?? throw new NullReferenceException();
+                        if(!ApplyExportedConfiguration(m, out var error))
+                        {
+                            Notify.Error(error);
+                        }
                     }
                 }
                 catch(Exception e)
@@ -273,12 +307,18 @@ public abstract class SplatoonScript
                     Notify.Error(e.Message);
                 }
             }
+            ImGui.SameLine();
+            if(ImGuiEx.IconButtonWithText(FontAwesomeIcon.Copy, "Copy selected configurations"))
+            {
+                MassExport = "";
+            }
         });
         var current = InternalData.CurrentConfigurationKey;
-        if(ImGui.BeginTable("ConfTable", 2, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.Borders))
+        if(ImGui.BeginTable("ConfTable", 3, ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.Borders))
         {
             ImGui.TableSetupColumn("Name".Loc(), ImGuiTableColumnFlags.WidthStretch);
             ImGui.TableSetupColumn("##control");
+            ImGui.TableSetupColumn("##Select");
             ImGui.TableHeadersRow();
 
             ImGui.TableNextRow();
@@ -325,6 +365,18 @@ public abstract class SplatoonScript
                     }
                 }
                 ImGui.EndPopup();
+            }
+
+            ImGui.TableNextColumn();
+            {
+                ref var export = ref Ref<bool>.Get($"{this.InternalData.FullName}_DefaultConfiguration");
+                ImGuiEx.Checkbox(FontAwesomeIcon.FileExport, null, null, null, null, "##exportScrptConf", ref export);
+                if(MassExport != null && export)
+                {
+                    MassExport += $"{SerializeConfiguration("")}\n";
+                }
+                ImGuiEx.Tooltip("Mark this configuration for export");
+                ImGuiEx.DragDropRepopulate("repScExp", export, ref export);
             }
 
             if(TryGetAvailableConfigurations(out var confList))
@@ -391,11 +443,25 @@ public abstract class SplatoonScript
                             }
                         });
                     }
+                    ImGui.TableNextColumn();
+                    ref var export = ref Ref<bool>.Get($"{this.InternalData.FullName}_{confKey}");
+                    ImGuiEx.Checkbox(FontAwesomeIcon.FileExport, null, null, null, null, "##exportScrptConf", ref export);
+                    if(MassExport != null && export)
+                    {
+                        MassExport += $"{SerializeConfiguration(confKey)}\n";
+                    }
+                    ImGuiEx.Tooltip("Mark this configuration for export");
+                    ImGuiEx.DragDropRepopulate("repScExp", export, ref export);
                     ImGui.PopID();
                 }
             }
 
             ImGui.EndTable();
+        }
+        if(MassExport != null)
+        {
+            Copy(MassExport);
+            MassExport = null;
         }
     }
 
@@ -412,7 +478,7 @@ public abstract class SplatoonScript
                 var m = GetExportedConfiguration(confKey)?.JSONClone() ?? throw new NullReferenceException();
                 var name = $"Copy of {confList.SafeSelect(confKey) ?? P.Config.DefaultScriptConfigurationNames.SafeSelect(this.InternalData.FullName, "Default Configuration").Loc()}";
                 var name2 = name;
-                var i = 0;
+                var i = 1;
                 while(confList.ContainsValue(name2))
                 {
                     name2 = $"{name} ({++i})";
@@ -448,6 +514,27 @@ public abstract class SplatoonScript
         {
             e.LogDuo();
         }
+    }
+
+    internal string? SerializeConfiguration(string confKey)
+    {
+        try
+        {
+            var conf = GetExportedConfiguration(confKey);
+            if(conf != null)
+            {
+                return JsonConvert.SerializeObject(conf);
+            }
+            else
+            {
+                PluginLog.Error("Failed to serialize configuration".Loc());
+            }
+        }
+        catch(Exception e)
+        {
+            e.LogDuo();
+        }
+        return null;
     }
 
     internal ExportedScriptConfiguration? GetExportedConfiguration(string? key)
@@ -486,7 +573,18 @@ public abstract class SplatoonScript
             error = "You are attempting to import configuration for another script. \nCurrent script: ??\nYour configuration is for: ??".Loc(InternalData.FullName, configuration.TargetScriptName);
             return false;
         }
-        if(configuration.ConfigurationName.IsNullOrEmpty()) configuration.ConfigurationName = "Imported configuration".Loc();
+
+        var newNamePref = configuration.ConfigurationName.IsNullOrEmpty()?"Imported configuration".Loc():configuration.ConfigurationName;
+        var newName = newNamePref;
+        int i = 2;
+        var dict = P.Config.ScriptConfigurationNames.GetOrCreate(InternalData.FullName);
+        while(dict.ContainsValue(newName))
+        {
+            newName = $"{newNamePref} ({i})";
+            i++;
+        }
+
+        configuration.ConfigurationName = newName;
         if(nameOverride != null)
         {
             configuration.ConfigurationName = nameOverride;
@@ -622,7 +720,7 @@ public abstract class SplatoonScript
             }
             foreach(var x in Controller.GetRegisteredElements())
             {
-                ImGui.PushID(x.Value.GUID);
+                ImGui.PushID(x.Value.GUID.ToString());
                 if(InternalData.UnconditionalDraw)
                 {
                     ImGuiEx.CollectionCheckbox($"Preview draw".Loc(), x.Key, InternalData.UnconditionalDrawElements);

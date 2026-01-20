@@ -1,17 +1,26 @@
-﻿using ECommons.Hooks;
+﻿using Dalamud.Game.ClientState.Objects.SubKinds;
+using ECommons.ExcelServices;
+using ECommons.GameFunctions;
+using ECommons.GameHelpers;
+using ECommons.GameHelpers.LegacyPlayer;
+using ECommons.Hooks;
 using ECommons.Hooks.ActionEffectTypes;
 using ECommons.LanguageHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Splatoon.Gui.Scripting;
+using Splatoon.Memory;
+using Splatoon.Modules;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.DirectoryServices.ActiveDirectory;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace Splatoon.SplatoonScripting;
 
-internal static partial class ScriptingProcessor
+#pragma warning disable
+internal unsafe static partial class ScriptingProcessor
 {
     private static ImmutableList<SplatoonScript> ScriptsInternal = [];
     internal static IReadOnlyList<SplatoonScript> Scripts => ScriptsInternal;
@@ -148,6 +157,7 @@ internal static partial class ScriptingProcessor
 
             try
             {
+                var noUpdate = P.Config.NoAutoUpdateScript.ToImmutableList();
                 PluginLog.Debug($"Starting downloading update list...");
                 var result = P.HttpClient.GetAsync("https://github.com/PunishXIV/Splatoon/raw/main/SplatoonScripts/update.csv").Result;
                 result.EnsureSuccessStatusCode();
@@ -184,8 +194,15 @@ internal static partial class ScriptingProcessor
                         PluginLog.Debug($"Found new valid update data: {data[0]} v{ver} = {data[2]}");
                         if((ForceUpdate != null && ForceUpdate.Contains(data[0])) || Scripts.Any(x => x.InternalData.FullName == data[0] && ((x.Metadata?.Version ?? 0) < ver || TabScripting.ForceUpdate))) // possible CME
                         {
-                            PluginLog.Debug($"Adding  {data[2]} to download list");
-                            Updates.Add(new(data[2]));
+                            if(noUpdate.Contains(data[0]))
+                            {
+                                PluginLog.Warning($"Script {data[0]} is on no update list and will not be updated");
+                            }
+                            else
+                            {
+                                PluginLog.Debug($"Adding  {data[2]} to download list");
+                                Updates.Add(new(data[2]));
+                            }
                         }
                     }
                     else
@@ -729,7 +746,7 @@ internal static partial class ScriptingProcessor
         }
     }
 
-    internal static void OnActorControl(uint sourceId, uint command, uint p1, uint p2, uint p3, uint p4, uint p5, uint p6, ulong targetId, byte replaying)
+    internal static void OnActorControl(uint sourceId, uint command, uint p1, uint p2, uint p3, uint p4, uint p5, uint p6, uint p7, uint p8, ulong targetId, byte replaying)
     {
         for(var i = 0; i < Scripts.Count; i++)
         {
@@ -737,7 +754,7 @@ internal static partial class ScriptingProcessor
             {
                 try
                 {
-                    Scripts[i].OnActorControl(sourceId, command, p1, p2, p3, p4, p5, p6, targetId, replaying);
+                    Scripts[i].OnActorControl(sourceId, command, p1, p2, p3, p4, p5, p6, p7, p8, targetId, replaying);
                 }
                 catch(Exception e) { Scripts[i].LogError(e, nameof(SplatoonScript.OnActorControl)); }
             }
@@ -755,6 +772,52 @@ internal static partial class ScriptingProcessor
                     Scripts[i].OnActionEffectEvent(set);
                 }
                 catch(Exception e) { Scripts[i].LogError(e, nameof(SplatoonScript.OnActionEffectEvent)); }
+            }
+        }
+        if(set.Source is IBattleNpc n && set.Action != null)
+        {
+            var printed = false;
+            foreach(var effect in set.TargetEffects)
+            {
+                if(effect.TargetID != 0 && Svc.Objects.TryGetFirst(x => x.ObjectId == (uint)effect.TargetID, out var effectTarget))
+                {
+                    printed = true;
+                    string targetText;
+                    string effectTargetText;
+                    {
+                        targetText = set.Target.AddressEquals(BasePlayer) ? "me" : (set.Target is IPlayerCharacter pc ? pc.GetJob().ToString() : $"{set.Target?.DataId}/{set.Target?.Name}" ?? "Unknown");
+                    }
+                    {
+                        effectTargetText = effectTarget.AddressEquals(BasePlayer) ? "me" : (effectTarget is IPlayerCharacter pc ? pc.GetJob().ToString() : $"{effectTarget?.DataId}/{effectTarget?.Name}" ?? "Unknown");
+                    }
+                    var text = $"Action {ExcelActionHelper.GetActionName(set.Action.Value.RowId, true)} cast on {targetText} effect on {effectTargetText} npc id={n.NameId}, model id={n.Struct()->ModelContainer.ModelCharaId}, transform={n.GetTransformationID()} data={n.DataId} name={n.Name} ActionEffect|{set.Action.Value.RowId}|{targetText.Split('/')[0]}|{effectTargetText.Split('/')[0]}|{n.NameId}|{n.Struct()->ModelContainer.ModelCharaId}|{n.GetTransformationID()}|{n.DataId}";
+                    P.ChatMessageQueue.Enqueue(text);
+                    if(P.Config.Logging) Logger.Log(text);
+                    P.LogWindow.Log(text);
+                }
+            }
+            if(!printed)
+            {
+                var targetText = set.Target.AddressEquals(BasePlayer) ? "me" : (set.Target is IPlayerCharacter pc ? pc.GetJob().ToString() : $"{set.Target?.DataId}/{set.Target?.Name}" ?? "Unknown");
+                var text = $"Action {ExcelActionHelper.GetActionName(set.Action.Value.RowId, true)} cast on {targetText} npc id={n.NameId}, model id={n.Struct()->ModelContainer.ModelCharaId}, transform={n.GetTransformationID()} data={n.DataId} name={n.Name} ActionEffect|{set.Action.Value.RowId}|{targetText.Split('/')[0]}|{n.NameId}|{n.Struct()->ModelContainer.ModelCharaId}|{n.GetTransformationID()}|{n.DataId}";
+                P.ChatMessageQueue.Enqueue(text);
+                if(P.Config.Logging) Logger.Log(text);
+                P.LogWindow.Log(text);
+            }
+        }
+    }
+
+    internal static void OnStartingCast(uint sourceId, PacketActorCast* packet)
+    {
+        for(var i = 0; i < Scripts.Count; i++)
+        {
+            if(Scripts[i].IsEnabled)
+            {
+                try
+                {
+                    Scripts[i].OnStartingCast(sourceId, packet);
+                }
+                catch(Exception e) { Scripts[i].LogError(e, nameof(SplatoonScript.OnStartingCast)); }
             }
         }
     }
