@@ -13,6 +13,7 @@ using ECommons.MathHelpers;
 using ECommons.Schedulers;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Newtonsoft.Json;
+using Splatoon;
 using Splatoon.Memory;
 using Splatoon.SplatoonScripting;
 using Splatoon.Utility;
@@ -27,9 +28,11 @@ namespace SplatoonScriptsOfficial.Duties.Dawntrail;
 
 public unsafe class M12S_P2_Clones_2 : SplatoonScript
 {
-    public override Metadata Metadata { get; } = new(11, "NightmareXIV, Redmoon, Garume");
+    public override Metadata Metadata { get; } = new(13, "NightmareXIV, Redmoon, Garume");
     public override HashSet<uint>? ValidTerritories { get; } = [1327];
     int IsHovering = -1;
+
+    public bool IsNetherwrathFar = false;
 
     public enum Direction { N, NE, E, SE, S, SW, W, NW }
     public enum TetherKind
@@ -65,6 +68,18 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
         Controller.RegisterElementFromCode("GoTo", """
             {"Name":"","refX":102.4791,"refY":97.90576,"radius":0.75,"Filled":false,"fillIntensity":0.5,"thicc":6.0,"tether":true}
             """);
+        Controller.RegisterElement("NothingGuide", new Element(0)
+        {
+            Enabled = false,
+            radius = 1.5f,
+            thicc = 8f,
+            overlayVOffset = 3f,
+            overlayFScale = 2.0f,
+            tether = true,
+            color = EColor.RedBright.ToUint(),
+            overlayTextColor = EColor.RedBright.ToUint(),
+            overlayBGColor = 0xB0000000
+        });
         for(int i = 0; i < 100; i++)
         {
             Controller.RegisterElementFromCode($"Debug{i}", """{"Name":"","radius":0.5,"color":3372220415,"fillIntensity":0.5,"thicc":4.0,"overlayText":"Dbg"}""");
@@ -77,6 +92,7 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
     public override void OnReset()
     {
         PlayerDirection = null;
+        IsNetherwrathFar = false;
         Phase = 0;
     }
 
@@ -123,6 +139,7 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
                     else if(GetDesiredTether() == TetherKind.Nothing)
                     {
                         //
+                        ShowNothingGuide(PlayerDirection.Value);
                     }
                     else if(C.LP2.Contains(PlayerDirection.Value))
                     {
@@ -198,7 +215,8 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
         {
             var lpNumber = C.LP2.Contains(PlayerDirection.Value) ? 0 : 1;
             go.Enabled = true;
-            go.SetRefPosition(C.Phase3Positions[lpNumber][GetDesiredTether()].ToVector3());
+            var pos = (IsNetherwrathFar && C.DifferentNetherwrath) ? C.Phase3PositionsFar : C.Phase3Positions;
+            go.SetRefPosition(pos[lpNumber][GetDesiredTether()].ToVector3());
         }
 
         if(Phase == 4 && PlayerDirection != null)
@@ -282,11 +300,32 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
         return 0;
     }
 
+    void ShowNothingGuide(Direction direction)
+    {
+        if(!C.ShowNothingGuide) return;
+        if(!Controller.TryGetElementByName("NothingGuide", out var guide)) return;
+
+        guide.Enabled = true;
+        guide.overlayText = C.NothingGuideText.Get();
+        var clone = Svc.Objects
+            .OfType<IBattleNpc>()
+            .FirstOrDefault(x => x.DataId == (uint)ObjectDataId.PlayerClone && GetDirection(x.Position) == direction);
+        if(clone != null)
+        {
+            guide.SetRefPosition(clone.Position);
+        }
+    }
+
     public override unsafe void OnStartingCast(uint sourceId, PacketActorCast* packet)
     {
+        if(packet->ActionDescriptor.Type != FFXIVClientStructs.FFXIV.Client.Game.ActionType.Action) return;
         if(Phase == 0 && packet->ActionID == 46307)
         {
             Phase = 1;
+        }
+        if(packet->ActionID == 46383)
+        {
+            IsNetherwrathFar = true;
         }
     }
 
@@ -595,11 +634,28 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
                 LpPositionsEdit(2, C.Phase2Positions);
             });
 
-            ImGuiEx.TreeNodeCollapsingHeader("Phase 3 Positions", () =>
+            ImGui.Checkbox("Differentiate Netherwrath Far/Near for Phase 3", ref C.DifferentNetherwrath);
+            if(C.DifferentNetherwrath)
             {
-                ImGuiEx.TextWrapped($"Phase 3 is considered when time rewind begins.");
-                LpPositionsEdit(3, C.Phase3Positions);
-            });
+                ImGuiEx.TreeNodeCollapsingHeader("Phase 3 Positions (Netherwrath Near)", () =>
+                {
+                    ImGuiEx.TextWrapped($"Phase 3 is considered when time rewind begins.");
+                    LpPositionsEdit(3, C.Phase3Positions);
+                });
+                ImGuiEx.TreeNodeCollapsingHeader("Phase 3 Positions (Netherwrath Far)", () =>
+                {
+                    ImGuiEx.TextWrapped($"Phase 3 is considered when time rewind begins.");
+                    LpPositionsEdit(3, C.Phase3PositionsFar);
+                });
+            }
+            else
+            {
+                ImGuiEx.TreeNodeCollapsingHeader("Phase 3 Positions", () =>
+                {
+                    ImGuiEx.TextWrapped($"Phase 3 is considered when time rewind begins.");
+                    LpPositionsEdit(3, C.Phase3Positions);
+                });
+            }
 
             ImGuiEx.TreeNodeCollapsingHeader("Phase 4 Positions", () =>
             {
@@ -615,6 +671,16 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
             
             ImGuiEx.TreeNodeCollapsingHeader("Options",
                 () => { ImGui.Checkbox("Don't show valid tether partners", ref C.DontShowValidPartners); });
+            ImGuiEx.TreeNodeCollapsingHeader("Nothing Guide",
+                () =>
+                {
+                    ImGui.Checkbox("Show \"Nothing\" guide", ref C.ShowNothingGuide);
+                    if(C.ShowNothingGuide)
+                    {
+                        var showString = C.NothingGuideText.Get();
+                        C.NothingGuideText.ImGuiEdit(ref showString, "Message shown on the Nothing guide.");
+                    }
+                });
         }
         ImGui.Separator();
         if(ImGui.CollapsingHeader("Debug"))
@@ -634,11 +700,15 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
                 ImGuiEx.Text($"Candidates: {TetherCandidates.Print()}");
                 ImGui.InputInt("Phase", ref Phase);
             }
-            
-            Controller.GetRegisteredElements().Each(x =>
+            ImGuiEx.Text($"IsNetherwrathFar: {IsNetherwrathFar}");
+
+            if(ImGui.CollapsingHeader("Elements"))
             {
-                ImGuiEx.Text($"{x.Key} - Enabled: {x.Value.Enabled} - Posion: ({x.Value.refX}, {x.Value.refZ}, {x.Value.refY})");
-            });
+                Controller.GetRegisteredElements().Each(x =>
+                {
+                    ImGuiEx.Text($"{x.Key} - Enabled: {x.Value.Enabled} - Posion: ({x.Value.refX}, {x.Value.refZ}, {x.Value.refY})");
+                });
+            }
         }
     }
 
@@ -749,6 +819,13 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
         public bool BaseLP1 = true;
         public int BaseNum = 0;
         public bool DontShowValidPartners = false;
+        public bool ShowNothingGuide = true;
+        public bool DifferentNetherwrath = false;
+        public InternationalString NothingGuideText = new()
+        {
+            En = "Don't take tether",
+            Jp = "\u7dda\u3092\u3068\u308b\u306a"
+        };
         [JsonProperty("LP2")] public Direction[] LP1 = [Direction.SW, Direction.S, Direction.SE, Direction.E];
         [JsonProperty("LP1")] public Direction[] LP2 = [Direction.W, Direction.NW, Direction.N, Direction.NE];
         [JsonProperty("LP2Tethers")] public TetherKind[] LP1Tethers = [TetherKind.Stack, TetherKind.Fan, TetherKind.Defamation, TetherKind.Nothing];
@@ -791,6 +868,25 @@ public unsafe class M12S_P2_Clones_2 : SplatoonScript
     };
 
         public List<Dictionary<TetherKind, Vector2>> Phase3Positions = new() //rewind 1
+    {
+
+        new()
+        {
+            [TetherKind.Stack] = new(89, 96.5f),
+            [TetherKind.Fan] = new(89, 91),
+            [TetherKind.Defamation] = new(82.5f, 100.5f),
+            [TetherKind.Boss] = new(82.5f, 100.5f)
+        },
+        new()
+        {
+            [TetherKind.Stack] = new(89, 103.5f),
+            [TetherKind.Fan] = new(89f, 109),
+            [TetherKind.Defamation] = new(82.5f, 100.5f),
+            [TetherKind.Nothing] = new(82.5f, 100.5f)
+        },
+    };
+
+        public List<Dictionary<TetherKind, Vector2>> Phase3PositionsFar = new() //rewind 1
     {
 
         new()
