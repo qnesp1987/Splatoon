@@ -26,16 +26,16 @@ internal class Projection : IDisposable
     public Dictionary<uint, Dictionary<ActionDescriptor, PacketActorCast>> LastCast = [];
     public bool Blacklist = false;
     public List<ProjectionItemDescriptor> ProjectingItems = [];
-    Stopwatch Stopwatch = new();
+    private Stopwatch Stopwatch = new();
     public long LastSw = 0;
     private Projection()
     {
         Svc.Framework.Update += Framework_Update;
     }
 
-    List<Element> RentedElements = [];
+    private List<Element> RentedElements = [];
 
-    Element RentElement(int index, ShapeData shape, IBattleNpc caster)
+    private Element RentElement(int index, ShapeData shape, IBattleNpc caster)
     {
         Element ret;
         if(index < RentedElements.Count)
@@ -72,7 +72,7 @@ internal class Projection : IDisposable
         ret.faceplayer = "";
         ret.RotationOverrideAngleOnlyMode = false;
         ret.RotationOverride = false;
-        ret.CastFractionOverride = caster.CurrentCastTime / caster.TotalCastTime;
+        ret.CastFractionOverride = caster.CastInfo.CurrentCastTime / caster.CastInfo.TotalCastTime;
         ret.fillIntensity = P.Config.ProjectionFillIntensity;
         return ret;
     }
@@ -85,51 +85,55 @@ internal class Projection : IDisposable
         {
             ProjectingItems.Clear();
         }
-        int elementIndex = 0;
+        var elementIndex = 0;
         List<(IBattleNpc obj, Element element)> injectedElements = [];
         foreach(var x in Svc.Objects)
         {
-            if(x is IBattleNpc b && b.GetNameplateKind() != NameplateKind.FriendlyBattleNPC && b.IsCasting() && b.CastActionType == (int)ActionType.Action && Svc.Data.GetExcelSheet<Action>().TryGetRow(b.CastActionId, out var data))
+            if(x is IBattleNpc b && b.GetNameplateKind() != NameplateKind.FriendlyBattleNPC && b.IsCasting() && b.CastInfo.ActionType == (int)ActionType.Action && Svc.Data.GetExcelSheet<Action>().TryGetRow(b.CastInfo.ActionId, out var data))
             {
                 var shape = GuessShapeAndSize(data, b);
-                var info = b.Struct()->GetCastInfo();
-                uint targetObjectId = (info->TargetId.ObjectId != 0xE000_0000) ? info->TargetId.ObjectId : b.ObjectId;
+                var info = b.CastInfo;
+                var targetObjectId = (info.TargetId.ObjectId != 0xE000_0000) ? info.TargetId.ObjectId : b.ObjectId;
                 if(shape.Range > 0f && (data.EffectRange < RaidwideSize || shape.Shape != Shape.Circle))
                 {
                     var blacklisted = false;
-                    foreach(var a in P.Config.ProjectionBlacklistedActions)
+                    foreach (var a in P.Config.ProjectionBlacklistedActions)
                     {
-                        if(a.Action == data.RowId)
+                        if (a.Action == data.RowId)
                         {
                             blacklisted = true;
                         }
                     }
-                    ProjectionItemDescriptor descriptor = P.ConfigGui.Open ? new(new(b.CastActionType, b.CastActionId), b.ObjectId, blacklisted) : null;
-                    this.ProjectingItems.Add(descriptor);
+                    if (P.Config.ProjectionBlacklistedDuties.Contains(Player.Territory))
+                    {
+                        blacklisted = true;
+                    }
+                    ProjectionItemDescriptor descriptor = P.ConfigGui.Open ? new(new(b.CastInfo.ActionType, b.CastInfo.ActionId), b.ObjectId, blacklisted) : null;
+                    ProjectingItems.Add(descriptor);
                     bool? showOverride = null;
-                    bool isAlreadyProcessed = false;
+                    var isAlreadyProcessed = false;
                     foreach(var layout in P.Config.LayoutsL)
                     {
                         if(LayoutUtils.IsLayoutEnabled(layout))
                         {
-                            if(layout.ForcedProjectorActions.Contains(b.CastActionId))
+                            if(layout.ForcedProjectorActions.Contains(b.CastInfo.ActionId))
                             {
                                 descriptor?.WhitelistingLayouts.Add(layout.InternationalName.Get(layout.Name));
                                 showOverride = true;
                             }
-                            if(layout.BlacklistedProjectorActions.Contains(b.CastActionId))
+                            if(layout.BlacklistedProjectorActions.Contains(b.CastInfo.ActionId))
                             {
                                 descriptor?.BlacklistingLayouts.Add(layout.InternationalName.Get(layout.Name));
                                 showOverride = false;
                             }
-                            if(!isAlreadyProcessed) 
+                            if(!isAlreadyProcessed)
                             {
                                 foreach(var layoutElement in layout.ElementsL)
                                 {
                                     if(layoutElement.Enabled
                                         && layoutElement.type.EqualsAny(1, 3, 4)
                                         && layoutElement.refActorRequireCast
-                                        && layoutElement.refActorCastId.Contains(b.CastActionId)
+                                        && layoutElement.refActorCastId.Contains(b.CastInfo.ActionId)
                                         && LayoutUtils.IsAttributeMatches(layoutElement, b)
                                         )
                                     {
@@ -150,7 +154,7 @@ internal class Projection : IDisposable
                     descriptor?.Rendered = true;
                     var element = RentElement(elementIndex++, shape, b);
                     var rotation = 0f;
-                    if(LastCast.TryGetValue(b.ObjectId, out var list) && list.TryGetValue(new(b.CastActionType, b.CastActionId), out var packet) && packet.ActionType == b.CastActionType)
+                    if(LastCast.TryGetValue(b.ObjectId, out var list) && list.TryGetValue(new(b.CastInfo.ActionType, b.CastInfo.ActionId), out var packet) && packet.ActionType == b.CastInfo.ActionType)
                     {
                         rotation = 180 + packet.Rotation.RadToDeg();
                         element.RotationOverrideAddAngle = rotation;
@@ -177,10 +181,10 @@ internal class Projection : IDisposable
                         element.refActorObjectID = targetObjectId;
                         element.radius = shape.Range;
                         element.Donut = 0;
-                        if(info->TargetId.ObjectId == 0xE000_0000)
+                        if(info.TargetId.ObjectId == 0xE000_0000)
                         {
                             element.type = 0;
-                            element.SetRefPosition(info->TargetLocation);
+                            element.SetRefPosition(info.TargetLocation);
                         }
                     }
                     else if(shape.Shape == Shape.Donut)
@@ -188,10 +192,10 @@ internal class Projection : IDisposable
                         element.refActorObjectID = targetObjectId;
                         element.radius = shape.AngleOrWidth;
                         element.Donut = shape.Range;
-                        if(info->TargetId.ObjectId == 0xE000_0000)
+                        if(info.TargetId.ObjectId == 0xE000_0000)
                         {
                             element.type = 0;
-                            element.SetRefPosition(info->TargetLocation);
+                            element.SetRefPosition(info.TargetLocation);
                         }
                     }
                     else if(shape.Shape == Shape.Rect)
@@ -221,8 +225,8 @@ internal class Projection : IDisposable
                     else if(shape.Shape == Shape.Cone)
                     {
                         element.radius = shape.Range;
-                        element.coneAngleMin = (int)(-shape.AngleOrWidth.RadToDeg());
-                        element.coneAngleMax = (int)(shape.AngleOrWidth.RadToDeg());
+                        element.coneAngleMin = (int)-shape.AngleOrWidth.RadToDeg();
+                        element.coneAngleMax = (int)shape.AngleOrWidth.RadToDeg();
 
                         if(targetObjectId != b.ObjectId)
                         {
@@ -277,7 +281,7 @@ internal class Projection : IDisposable
         return data.CastType switch
         {
             2 => new(Shape.Circle, data.EffectRange),
-            3 => new(Shape.Cone , data.EffectRange + actor.HitboxRadius, DetermineConeAngle(data).Rad * HalfWidth),
+            3 => new(Shape.Cone, data.EffectRange + actor.HitboxRadius, DetermineConeAngle(data).Rad * HalfWidth),
             4 => new(Shape.Rect, data.EffectRange + actor.HitboxRadius, data.XAxisModifier * HalfWidth),
             5 => new(Shape.Circle, data.EffectRange + actor.HitboxRadius),
             //6 => custom shapes
@@ -291,7 +295,7 @@ internal class Projection : IDisposable
         };
     }
 
-    Dictionary<string, (float Inner, float Outer)?> DonutCache = [];
+    private Dictionary<string, (float Inner, float Outer)?> DonutCache = [];
     public (float Inner, float Outer)? DetermineDonutRange(Action data)
     {
         var path = data.Omen.Value.Path.ToString();
@@ -341,5 +345,5 @@ internal class Projection : IDisposable
 
     public readonly record struct ShapeData(Shape Shape, float Range, float AngleOrWidth = 0);
 
-    public enum Shape { Circle, Rect, Donut, Cone, Cross}
+    public enum Shape { Circle, Rect, Donut, Cone, Cross }
 }

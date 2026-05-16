@@ -14,6 +14,7 @@ using Lumina.Excel.Sheets;
 using Newtonsoft.Json;
 using Splatoon.RenderEngines;
 using Splatoon.Serializables;
+using System.Globalization;
 using System.Linq;
 
 namespace Splatoon;
@@ -175,12 +176,12 @@ internal unsafe partial class CGui
         ImGuiEx.Text($"X:");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(50f);
-        ImGui.DragFloat("##rotateX", ref this.CenterX, 0.1f);
+        ImGui.DragFloat("##rotateX", ref CenterX, 0.1f);
         ImGui.SameLine();
         ImGuiEx.Text($"Y:");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(50f);
-        ImGui.DragFloat("##rotateY", ref this.CenterY, 0.1f);
+        ImGui.DragFloat("##rotateY", ref CenterY, 0.1f);
         ImGui.SameLine();
         if(ImGuiEx.IconButton(FontAwesomeIcon.MousePointer, "SelOnScreenRot"))
         {
@@ -191,7 +192,7 @@ internal unsafe partial class CGui
         ImGuiEx.Text($"Angle:");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(50f);
-        ImGui.DragFloat("##angleRot", ref this.RotationAngle, 0.1f);
+        ImGui.DragFloat("##angleRot", ref RotationAngle, 0.1f);
         ImGui.SameLine();
         if(ImGuiEx.IconButton("\uf2f9"))
         {
@@ -216,13 +217,12 @@ internal unsafe partial class CGui
             el.refX = CenterX - (el.refX - CenterX);
         }
         ImGuiEx.Tooltip($"Mirror horizontally");
-        ImGui.SameLine(0,2);
+        ImGui.SameLine(0, 2);
         if(ImGuiEx.IconButton(FontAwesomeIcon.ArrowsUpDown))
         {
             el.refX = CenterY - (el.refY - CenterY);
         }
         ImGuiEx.Tooltip($"Mirror vertically");
-
 
         ImGuiUtils.SizedText("Conditional:".Loc(), WidthElement);
         ImGui.SameLine();
@@ -247,7 +247,6 @@ internal unsafe partial class CGui
         ImGui.SameLine();
         ImGui.Checkbox("Reset condition".Loc(), ref el.ConditionalReset);
         ImGuiEx.HelpMarker("Upon reaching this element, previous conditions will be reset".Loc());
-
 
         ImGuiUtils.SizedText("Attributes:".Loc(), WidthElement);
         ImGui.SameLine();
@@ -700,14 +699,14 @@ internal unsafe partial class CGui
                 ImGuiEx.Tooltip("Left click - toggle; shift+click - replace".Loc());
                 if(ImGui.BeginPopup("FromCastingEntity"))
                 {
-                    int i = 0;
+                    var i = 0;
                     foreach(var x in Svc.Objects.OfType<IBattleNpc>().Where(x => x.IsCasting()))
                     {
                         ImGui.PushID(i++);
-                        if(ImGui.Selectable($"{ExcelActionHelper.GetActionName(x.CastActionId, true)} - {x.CurrentCastTime:F1}/{x.TotalCastTime:F1} - from {x.Name} N#{x.NameId} D#{x.DataId}", selected: el.refActorCastId.Contains(x.CastActionId), flags: ImGuiSelectableFlags.DontClosePopups))
+                        if(ImGui.Selectable($"{ExcelActionHelper.GetActionName(x.CastInfo.ActionId, true)} - {x.CastInfo.CurrentCastTime:F1}/{x.CastInfo.TotalCastTime:F1} - from {x.Name} N#{x.NameId} D#{x.DataId}", selected: el.refActorCastId.Contains(x.CastInfo.ActionId), flags: ImGuiSelectableFlags.DontClosePopups))
                         {
                             if(ImGuiEx.Shift) el.refActorCastId.Clear();
-                            el.refActorCastId.Toggle(x.CastActionId);
+                            el.refActorCastId.Toggle(x.CastInfo.ActionId);
                             if(el.refActorComparisonType == 0)
                             {
                                 el.refActorComparisonType = 6;
@@ -902,7 +901,7 @@ internal unsafe partial class CGui
                 }
                 ImGuiUtils.SizedText("", WidthElement);
                 ImGui.SameLine();
-                ImGui.Checkbox((el.refActorRequireBuffsInvert ? "Require ANY status to be missing".Loc() + "##" : "Require ALL listed statuses to be present".Loc() + "##"), ref el.refActorRequireAllBuffs);
+                ImGui.Checkbox(el.refActorRequireBuffsInvert ? "Require ANY status to be missing".Loc() + "##" : "Require ALL listed statuses to be present".Loc() + "##", ref el.refActorRequireAllBuffs);
                 ImGui.SameLine();
                 ImGui.Checkbox("Invert behavior".Loc(), ref el.refActorRequireBuffsInvert);
             }
@@ -995,7 +994,6 @@ internal unsafe partial class CGui
                 ImGui.Checkbox("Invert".Loc() + "##dist", ref el.LimitDistanceInvert);
             }
 
-
             ImGuiUtils.SizedText("Rotation limit".Loc(), WidthElement);
             ImGui.SameLine();
             ImGui.Checkbox("##rotaLimit", ref el.LimitRotation);
@@ -1012,7 +1010,6 @@ internal unsafe partial class CGui
                 ImGui.SameLine();
                 ImGuiEx.Text("-");
                 ImGui.SameLine();
-
 
                 ImGui.SetNextItemWidth(50f);
                 var rot2 = 180 - el.RotationMax.RadiansToDegrees();
@@ -1106,6 +1103,7 @@ internal unsafe partial class CGui
                     el.refActorTargetingYou = 2;
                 }
             }
+
             ImGuiUtils.SizedText("Tether info:".Loc(), WidthElement);
             ImGui.SameLine();
             ImGui.Checkbox("##tether", ref el.refActorTether);
@@ -1170,6 +1168,29 @@ internal unsafe partial class CGui
                 ImGui.SameLine();
                 ImGuiEx.Text("Empty = with any");
             }
+
+            ImGuiUtils.SizedText("Animation IDs:".Loc(), WidthElement);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(200f);
+            var animationSplit = el.AnimationIds.Print(", ");
+            if(ImGui.InputTextWithHint("##aniId", "Comma-separated list".Loc(), ref animationSplit))
+            {
+                var spl = animationSplit.Split(",", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                el.AnimationIds.Clear();
+                foreach(var x in spl)
+                {
+                    if(x.StartsWith("0x") ? uint.TryParse(x, NumberStyles.HexNumber, null, out var id) : uint.TryParse(x, out id))
+                    {
+                        if(!el.AnimationIds.Contains(id))
+                        {
+                            el.AnimationIds.Add(id);
+                        }
+                    }
+                }
+            }
+            ImGuiEx.HelpMarker("Only EventObj can have AnimationId. Use $ANIMATIONID to display in overlay.");
+            ImGui.SameLine();
+            ImGui.Checkbox("NOT", ref el.AnimationInverted);
         }
 
         if(el.type.EqualsAny(0, 2, 3, 5))

@@ -34,7 +34,7 @@ internal unsafe static partial class ScriptingProcessor
         "https://github.com/PunishXIV/",
         "https://www.github.com/PunishXIV/",
         "https://raw.githubusercontent.com/PunishXIV/",
-        "https://nightmarexiv.com/"
+        "https://nightmarexiv.org/"
     ];
     internal static ImmutableList<BlacklistData> Blacklist = ImmutableList<BlacklistData>.Empty;
     internal static volatile bool UpdateCompleted = false;
@@ -379,7 +379,7 @@ internal unsafe static partial class ScriptingProcessor
                                             var assembly = Compiler.Load(code, pdb);
                                             foreach(var t in assembly.GetTypes())
                                             {
-                                                if(t.BaseType?.FullName == "Splatoon.SplatoonScripting.SplatoonScript")
+                                                if(t.BaseType.IsAssignableTo(typeof(SplatoonScript)))
                                                 {
                                                     var instance = (SplatoonScript)assembly.CreateInstance(t.FullName);
                                                     instance.InternalData = new(result.path, instance)
@@ -563,8 +563,16 @@ internal unsafe static partial class ScriptingProcessor
         }
     }
 
+    /// <summary>
+    /// This function never throws
+    /// </summary>
+    /// <param name="i"></param>
     internal static void OnReset(int i) => OnReset(Scripts[i]);
 
+    /// <summary>
+    /// This function never throws
+    /// </summary>
+    /// <param name="script"></param>
     internal static void OnReset(SplatoonScript script)
     {
         try
@@ -592,7 +600,7 @@ internal unsafe static partial class ScriptingProcessor
         }
     }
 
-    internal static void OnObjectEffect(uint Target, ushort Param1, ushort Param2)
+    internal static void OnObjectEffect(uint Target, uint entityId, uint actionId)
     {
         for(var i = 0; i < Scripts.Count; i++)
         {
@@ -600,7 +608,7 @@ internal unsafe static partial class ScriptingProcessor
             {
                 try
                 {
-                    Scripts[i].OnObjectEffect(Target, Param1, Param2);
+                    Scripts[i].OnObjectEffect(Target, entityId, actionId);
                 }
                 catch(Exception e) { Scripts[i].LogError(e, nameof(SplatoonScript.OnObjectEffect)); }
             }
@@ -695,6 +703,32 @@ internal unsafe static partial class ScriptingProcessor
                 try
                 {
                     Scripts[i].OnDirectorUpdate(category);
+                }
+                catch(Exception e) { Scripts[i].LogError(e, nameof(SplatoonScript.OnDirectorUpdate)); }
+            }
+        }
+    }
+
+    internal static void ResetAllScripts()
+    {
+        for(var i = 0; i < Scripts.Count; i++)
+        {
+            if(Scripts[i].IsEnabled)
+            {
+                OnReset(i);
+            }
+        }
+    }
+
+    internal static void OnDirectorUpdate(nint directorPtr, uint targetId, DirectorUpdateCategory a3, uint a4, uint a5, int a6, int a7, int a8, int a9)
+    {
+        for(var i = 0; i < Scripts.Count; i++)
+        {
+            if(Scripts[i].IsEnabled)
+            {
+                try
+                {
+                    Scripts[i].OnDirectorUpdate(directorPtr, targetId, a3, a4, a5, a6, a7, a8, a9);
                 }
                 catch(Exception e) { Scripts[i].LogError(e, nameof(SplatoonScript.OnDirectorUpdate)); }
             }

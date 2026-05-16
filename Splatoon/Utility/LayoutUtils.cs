@@ -1,4 +1,6 @@
 ﻿using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Objects.SubKinds;
+using ECommons.CSExtensions;
 using ECommons.GameFunctions;
 using ECommons.GameHelpers;
 using ECommons.GameHelpers.LegacyPlayer;
@@ -9,6 +11,7 @@ using System.Text.RegularExpressions;
 using static FFXIVClientStructs.FFXIV.Client.Game.Character.VfxContainer;
 
 namespace Splatoon.Utility;
+
 public static unsafe class LayoutUtils
 {
     public static bool IsAttributeMatches(Element e, IGameObject o)
@@ -23,8 +26,8 @@ public static unsafe class LayoutUtils
              (e.refActorPlaceholder.Count == 0 || e.refActorPlaceholder.Any(x => ResolvePlaceholder(x) == o.Address)) &&
              (e.refActorNPCNameID == 0 || (o is ICharacter c2 && c2.NameId == e.refActorNPCNameID)) &&
              (e.refActorVFXPath == "" || (AttachedInfo.TryGetSpecificVfxInfo(o, e.refActorVFXPath, out var info) && info.Age.InRange(e.refActorVFXMin, e.refActorVFXMax))) &&
-             ((e.refActorObjectEffectData1 == 0 && e.refActorObjectEffectData2 == 0) || (AttachedInfo.ObjectEffectInfos.TryGetValue(o.Address, out var einfo) && IsObjectEffectMatches(e, o, einfo)) &&
-             (e.refActorNamePlateIconID == 0 || o.Struct()->NamePlateIconId == e.refActorNamePlateIconID));
+             ((e.refActorObjectEffectData1 == 0 && e.refActorObjectEffectData2 == 0) || (AttachedInfo.ObjectEffectInfos.TryGetValue(o.Address, out var einfo) && IsObjectEffectMatches(e, o, einfo) &&
+             (e.refActorNamePlateIconID == 0 || o.Struct()->NamePlateIconId == e.refActorNamePlateIconID)));
         }
         else
         {
@@ -48,7 +51,7 @@ public static unsafe class LayoutUtils
         {
             if(info.Count > 0)
             {
-                var last = info[info.Count - 1];
+                var last = info[^1];
                 return last.data1 == e.refActorObjectEffectData1 && last.data2 == e.refActorObjectEffectData2;
             }
             return false;
@@ -82,7 +85,7 @@ public static unsafe class LayoutUtils
     {
         if(e.refTargetYou)
         {
-            return ((e.refActorTargetingYou == 1 && a.TargetObjectId != BasePlayer.EntityId) || (e.refActorTargetingYou == 2 && a.TargetObjectId == BasePlayer.EntityId));
+            return (e.refActorTargetingYou == 1 && a.TargetObjectId != BasePlayer.EntityId) || (e.refActorTargetingYou == 2 && a.TargetObjectId == BasePlayer.EntityId);
         }
 
         return false;
@@ -96,7 +99,13 @@ public static unsafe class LayoutUtils
             && (!element.refActorRequireBuff || (element.refActorBuffId.Count > 0 && gameObject is IBattleChara chr3 && CheckEffect(element, chr3)))
             && (!element.refActorUseTransformation || (gameObject is IBattleChara chr4 && CheckTransformationID(element, chr4)))
             && (!element.refMark || (gameObject is IBattleChara chr5 && Marking.HaveMark(chr5, (uint)element.refMarkID)))
-            && (!element.refActorTether || IsTetherMatches(element, gameObject) == !element.refActorIsTetherInvert);
+            && (!element.refActorTether || IsTetherMatches(element, gameObject) == !element.refActorIsTetherInvert)
+            && (element.AnimationIds.Count == 0 || (gameObject is IEventObj eobj && CheckAnimationId(element, eobj)));
+    }
+
+    public static bool CheckAnimationId(Element e, IEventObj eobj)
+    {
+        return e.AnimationIds.Contains(eobj.AnimationId) == !e.AnimationInverted;
     }
 
     public static bool IsTetherMatches(Element e, IGameObject obj)
@@ -108,7 +117,7 @@ public static unsafe class LayoutUtils
                 if(obj is ICharacter chr)
                 {
                     var c = chr.Struct();
-                    for(int i = 0; i < c->Vfx.Tethers.Length; i++)
+                    for(var i = 0; i < c->Vfx.Tethers.Length; i++)
                     {
                         var t = c->Vfx.Tethers[i];
                         if(e.refActorTetherParam2 == null || e.refActorTetherParam2 == t.Id)
@@ -175,7 +184,7 @@ public static unsafe class LayoutUtils
                     if(o is ICharacter chr)
                     {
                         var c = chr.Struct();
-                        for(int i = 0; i < c->Vfx.Tethers.Length; i++)
+                        for(var i = 0; i < c->Vfx.Tethers.Length; i++)
                         {
                             var t = c->Vfx.Tethers[i];
                             if(t.TargetId.ObjectId == obj.EntityId && (e.refActorTetherParam2 == null || e.refActorTetherParam2 == t.Id))
@@ -305,8 +314,8 @@ public static unsafe class LayoutUtils
             float totalCastTime = 1;
             if(chr.IsCasting(e.refActorCastId))
             {
-                castTime = chr.CurrentCastTime;
-                totalCastTime = chr.TotalCastTime;
+                castTime = chr.CastInfo.CurrentCastTime;
+                totalCastTime = chr.CastInfo.TotalCastTime;
             }
             else if(!(e.refActorUseOvercast && AttachedInfo.TryGetCastTime(chr.Address, e.refActorCastId, out castTime)))
             {
@@ -357,7 +366,7 @@ public static unsafe class LayoutUtils
         if(!layout.Enabled) return false;
         if(!layout.Group.IsNullOrEmpty() && P.Config.DisabledGroups.Contains(layout.Group)) return false;
         if(layout.DisableInDuty && Svc.Condition[ConditionFlag.BoundByDuty]) return false;
-        if((layout.ZoneLockH.Count > 0 && !layout.ZoneLockH.Contains(Svc.ClientState.TerritoryType)).Invert(layout.IsZoneBlacklist)) return false;
+        if((layout.ZoneLockH.Count > 0 && !layout.ZoneLockH.Contains((ushort)Svc.ClientState.TerritoryType)).Invert(layout.IsZoneBlacklist)) return false;
         if(layout.Scenes.Count > 0 && !layout.Scenes.Contains(*Scene.ActiveScene)) return false;
         if(layout.Phase != 0 && layout.Phase != P.Phase) return false;
         if(layout.JobLockH.Count > 0 && !layout.JobLockH.Contains(BasePlayer.GetJob())) return false;
@@ -491,6 +500,6 @@ public static unsafe class LayoutUtils
 
     public static bool ShouldDraw(float x1, float x2, float y1, float y2)
     {
-        return ((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2)) < P.Config.maxdistance * P.Config.maxdistance;
+        return (((x1 - x2) * (x1 - x2)) + ((y1 - y2) * (y1 - y2))) < P.Config.maxdistance * P.Config.maxdistance;
     }
 }

@@ -35,6 +35,7 @@ using Localization = ECommons.LanguageHelpers.Localization;
 using ObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
 namespace Splatoon;
+
 public unsafe class Splatoon : IDalamudPlugin
 {
     public const string DiscordURL = "https://discord.gg/Zzrcc8kmvy";
@@ -104,8 +105,8 @@ public unsafe class Splatoon : IDalamudPlugin
     internal Dictionary<(string Name, uint EntityId, ulong GameObjectId, uint DataID, int ModelID, uint NPCID, uint NameID, ObjectKind type), ObjectInfo> loggedObjectList = [];
     internal bool LogObjects = false;
     internal bool DisableLineFix = false;
-    private int phase = 1;
-    internal int Phase { get => phase; set { phase = value; ScriptingProcessor.OnPhaseChange(value); } }
+
+    internal int Phase { get; set { field = value; ScriptingProcessor.OnPhaseChange(value); } } = 1;
     internal int LayoutAmount = 0;
     internal int ElementAmount = 0;
     internal static string LimitGaugeResets = "";
@@ -223,7 +224,6 @@ public unsafe class Splatoon : IDalamudPlugin
         Element.Init();
         mapEffectProcessor = new();
         TetherProcessor = new();
-        ObjectEffectProcessor = new();
         DirectorUpdate.Init(DirectorUpdateProcessor.ProcessDirectorUpdate);
         ActionEffect.Init(ActionEffectProcessor.ProcessActionEffect);
         ActionEffect.ActionEffectEvent += ScriptingProcessor.OnActionEffectEvent;
@@ -262,6 +262,11 @@ public unsafe class Splatoon : IDalamudPlugin
         SplatoonIPC.Init();
     }
 
+    private void OnChatMessage(Dalamud.Game.Chat.IHandleableChatMessage message)
+    {
+        this.OnChatMessage(message.Type, message.Timestamp, message.Sender, message.Message);
+    }
+
     public void Dispose()
     {
         Disposed = true;
@@ -292,7 +297,6 @@ public unsafe class Splatoon : IDalamudPlugin
         });
         Safe(mapEffectProcessor.Dispose);
         Safe(TetherProcessor.Dispose);
-        Safe(ObjectEffectProcessor.Dispose);
         Safe(AttachedInfo.Dispose);
         Safe(ScriptingProcessor.Dispose);
         Safe(BuffEffectProcessor.Dispose);
@@ -344,7 +348,7 @@ public unsafe class Splatoon : IDalamudPlugin
     }
 
     internal static readonly string[] InvalidSymbols = { "", "", "", "“", "”", "" };
-    internal void OnChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
+    internal void OnChatMessage(XivChatType type, int timestamp, SeString sender, SeString message)
     {
         var inttype = (int)type;
         if(inttype == 2105 && LimitGaugeResets.Equals(message.ToString()))
@@ -390,15 +394,12 @@ public unsafe class Splatoon : IDalamudPlugin
         }
         else
         {
-            if(HttpServer != null)
-            {
-                HttpServer.Dispose();
-                HttpServer = null;
-            }
+            HttpServer?.Dispose();
+            HttpServer = null;
         }
     }
 
-    internal void TerritoryChangedEvent(ushort e)
+    internal void TerritoryChangedEvent(uint e)
     {
         PriorityPopupWindow.IsOpen = false;
         PriorityPopupWindow.Open(false);
@@ -457,7 +458,6 @@ public unsafe class Splatoon : IDalamudPlugin
             l.FreezeInfo = new();
         }
     }
-
 
     internal void Tick(IFramework framework)
     {
@@ -786,7 +786,7 @@ public unsafe class Splatoon : IDalamudPlugin
                 }
             }
             if(!lmbdown && prevMouseState)
-            { 
+            {
                 s2wInfo = null;
             }
             prevMouseState = lmbdown;

@@ -14,6 +14,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using ECommons.DalamudServices.Legacy;
+
 namespace SplatoonScriptsOfficial.Tests;
 public unsafe class ActionEffectTest : SplatoonScript
 {
@@ -22,19 +24,12 @@ public unsafe class ActionEffectTest : SplatoonScript
 
     public override void OnActionEffectEvent(ActionEffectSet set)
     {
-        if(set.Source is not IPlayerCharacter)
+        if(set.Source is IPlayerCharacter pc)
         {
-            PluginLog.Information($"Cast {set.Action?.RowId} on {set.Source}");
-        }
-        //if(set.Target?.Address == Player.Object.Address)
-        {
-            foreach(var effect in set.TargetEffects)
-            {
-                for(var i = 0; i < set.Header.TargetCount; i++)
-                {
-                    PluginLog.Information($"{effect[i]}={effect[i].Damage}/{effect[i].mult}");
-                }
-            }
+            PluginLog.Information($"""
+                Cast
+                {set.Header.ActionType} @ {set.Header.ActionID}
+                """);
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿using Dalamud.Hooking;
 using Dalamud.Interface.Colors;
 using ECommons.LanguageHelpers;
+using ECommons.Reflection;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.Shell;
@@ -146,7 +147,7 @@ internal static class LayoutDrawSelector
                 var curpos = ImGui.GetCursorScreenPos();
                 var contRegion = ImGui.GetContentRegionAvail().X;
                 var cond = layout.Enabled && e.Enabled && e.Conditional;
-                if(ImGui.Selectable($"{(cond && e.IsVisible() == !e.ConditionalInvert ? "↓" : null)}{(cond && layout.ConditionalAnd && e.IsVisible() == e.ConditionalInvert ? "×" : null)}{(cond && e.ConditionalReset ? "§" : null)}{(e.IsCapturing? "©" : "")}{(e.Nodraw? "Ø" : "")}{e.GetName()}", CurrentElement == e))
+                if(ImGui.Selectable($"{(cond && e.IsVisible() == !e.ConditionalInvert ? "↓" : null)}{(cond && layout.ConditionalAnd && e.IsVisible() == e.ConditionalInvert ? "×" : null)}{(cond && e.ConditionalReset ? "§" : null)}{(e.IsCapturing ? "©" : "")}{(e.Nodraw ? "Ø" : "")}{e.GetName()}", CurrentElement == e))
                 {
                     if(CurrentElement == e)
                     {
@@ -215,10 +216,13 @@ internal static class LayoutDrawSelector
                 {
                     try
                     {
-                        layout.GetElementsWithSubconfiguration().Add(JsonConvert.DeserializeObject<Element>(ImGui.GetClipboardText()));
+                        var l = JsonConvert.DeserializeObject<Element>(ImGui.GetClipboardText()) ?? throw new NullReferenceException();
+                        if(l.GetType().GetFieldPropertyUnions().Any(x => !x.UnionType.IsValueType && x.GetValue(l) == null)) throw new NullReferenceException();
+                        layout.GetElementsWithSubconfiguration().Add(l);
                     }
                     catch(Exception e)
                     {
+                        e.Log();
                         Notify.Error($"{e.Message}");
                     }
                 }

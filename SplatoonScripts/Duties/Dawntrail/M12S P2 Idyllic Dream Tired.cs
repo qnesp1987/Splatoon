@@ -31,11 +31,13 @@ using Dalamud.Interface.Colors;
 using ECommons.GameHelpers;
 using Newtonsoft.Json;
 
+using ECommons.DalamudServices.Legacy;
+
 namespace SplatoonScriptsOfficial.Duties.Dawntrail;
 
 public unsafe class M12S_P2_Idyllic_Dream_Tired : SplatoonScript
 {
-    public override Metadata Metadata { get; } = new(19, "NightmareXIV, Redmoon, Garume");
+    public override Metadata Metadata { get; } = new(22, "NightmareXIV, Redmoon, Garume");
     public override HashSet<uint>? ValidTerritories { get; } = [1327];
 
     public override void OnSetup()
@@ -60,13 +62,13 @@ public unsafe class M12S_P2_Idyllic_Dream_Tired : SplatoonScript
             """);
         
         Controller.RegisterElementFromCode("Given Far",
-            """{"Name":"Change my position!","refX":108.669846,"refY":92.17644,"Donut":0.2}""");
+            """{"Name":"(wind tower) Change my position!","refX":108.669846,"refY":92.17644,"Donut":0.2}""");
         Controller.RegisterElementFromCode("Given Near",
-            """{"Name":"Change my position!","refX":108.56247,"refY":97.35193,"Donut":0.2}""");
+            """{"Name":"(doom tower) Change my position!","refX":108.56247,"refY":97.35193,"Donut":0.2}""");
         Controller.RegisterElementFromCode("Taken Far",
-            """{"Name":"Change my position!","refX":108.244225,"refY":107.46305,"refZ":3.8146973E-06,"Donut":0.2}""");
+            """{"Name":"(earth/fire tower) Change my position!","refX":108.244225,"refY":107.46305,"refZ":3.8146973E-06,"Donut":0.2}""");
         Controller.RegisterElementFromCode("Taken Near",
-            """{"Name":"Change my position!","refX":110.42621,"refY":97.36201,"refZ":3.8146973E-06,"Donut":0.2}""");
+            """{"Name":"(earth/fire tower) Change my position!","refX":110.42621,"refY":97.36201,"refZ":3.8146973E-06,"Donut":0.2}""");
 
         Controller.RegisterElementFromCode("DefamationOnYou", """
             {"Name":"","type":1,"radius":0.0,"Donut":0,"fillIntensity":0.548,"overlayBGColor":4286382206,"overlayTextColor":4294967295,"overlayVOffset":2.0,"overlayText":"<<< Defamation>>\\n  <<< on YOU! >>>","refActorType":1}
@@ -148,6 +150,16 @@ public unsafe class M12S_P2_Idyllic_Dream_Tired : SplatoonScript
             Filled = true,
             Donut = 0.2f,
         });
+
+        Controller.RegisterElementFromCode("SafeWestLeftRight", """{"Name":"","refX":85.0,"refY":95.0,"radius":3.0,"color":3366322069,"Filled":false,"fillIntensity":0.5,"overlayText":"Safe: West Platform - Left/Right"}""");
+        Controller.RegisterElementFromCode("SafeEastLeftRight", """{"Name":"","refX":115.0,"refY":95.0,"radius":3.0,"color":3366322069,"Filled":false,"fillIntensity":0.5,"overlayText":"Safe: East Platform - Left/Right"}""");
+        Controller.RegisterElementFromCode("SafeWestFrontBack", """{"Name":"","refX":92.0,"refY":100.0,"radius":3.0,"color":3366322069,"Filled":false,"fillIntensity":0.5,"overlayText":"Safe: West Platform - Front/Back"}""");
+        Controller.RegisterElementFromCode("SafeEastFrontBack", """{"Name":"","refX":108.0,"refY":100.0,"radius":3.0,"color":3366322069,"Filled":false,"fillIntensity":0.5,"overlayText":"Safe: East Platform - Front/Back"}""");
+
+        Controller.RegisterElementFromCode("SafeWestLeftRightA", """{"Name":"","refX":85.0,"refY":95.0,"radius":3.0,"Donut":1.0,"color":3358064384,"fillIntensity":0.663,"thicc":5.0,"tether":true}""");
+        Controller.RegisterElementFromCode("SafeEastLeftRightA", """{"Name":"","refX":115.0,"refY":95.0,"radius":3.0,"Donut":1.0,"color":3358064384,"fillIntensity":0.663,"thicc":5.0,"tether":true}""");
+        Controller.RegisterElementFromCode("SafeWestFrontBackA", """{"Name":"","refX":92.0,"refY":100.0,"radius":3.0,"Donut":1.0,"color":3358064384,"fillIntensity":0.663,"thicc":5.0,"tether":true}""");
+        Controller.RegisterElementFromCode("SafeEastFrontBackA", """{"Name":"","refX":108.0,"refY":100.0,"radius":3.0,"Donut":1.0,"color":3358064384,"fillIntensity":0.663,"thicc":5.0,"tether":true}""");
     }
 
     Dictionary<Direction, Vector2> ReenactmentDirections = new()
@@ -914,7 +926,7 @@ public unsafe class M12S_P2_Idyllic_Dream_Tired : SplatoonScript
             }
         }
 
-        if (State.Phase is 13 or 16 or 17)
+        if ((State.Phase == 13 && GetAdjustedDefamationNumber() < 5) || (State.Phase.EqualsAny(16, 17) && GetAdjustedDefamationNumber() < 6))
         {
             Vector3? finalPosition = null;
             Vector3 getPosition(string element)
@@ -1011,6 +1023,24 @@ public unsafe class M12S_P2_Idyllic_Dream_Tired : SplatoonScript
                     }
                 }
             }
+        }
+
+        if(State.Phase == 12 || State.Phase == 13 || State.Phase == 14 || State.Phase == 15)
+        {
+            var eastUnsafe = State.NextCleavesList.Any(x => x.Pos.X < 100);
+            Element? e = null;
+            var mustGo = State.Phase > 13 || (State.Phase == 13 && GetAdjustedDefamationNumber() >= 5);
+            if(State.NextCleavesNorthSouth == true)
+            {
+                e = Controller.GetElementByName($"Safe{(eastUnsafe ? "West" : "East")}LeftRight{(mustGo ? "A" : "")}");
+                
+            }
+            if(State.NextCleavesNorthSouth == false)
+            {
+                e = Controller.GetElementByName($"Safe{(eastUnsafe ? "West" : "East")}FrontBack{(mustGo ? "A" : "")}");
+            }
+            e?.Enabled = true;
+            if(mustGo) e?.color = GetRainbowColor(1f).ToUint();
         }
 
         if(State.Phase == 14 || State.Phase == 15 || State.Phase == 16)

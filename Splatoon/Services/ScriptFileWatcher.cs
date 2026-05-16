@@ -3,6 +3,7 @@ using Splatoon.SplatoonScripting;
 using System.Threading;
 
 namespace Splatoon.Services;
+
 public class ScriptFileWatcher : IDisposable
 {
     private List<FileSystemWatcher> Watchers = [];
@@ -67,7 +68,7 @@ public class ScriptFileWatcher : IDisposable
         {
             try
             {
-                S.ThreadPool.Run(() =>
+                new Thread(() =>
                 {
                     try
                     {
@@ -100,7 +101,7 @@ public class ScriptFileWatcher : IDisposable
                     {
                         ex.Log();
                     }
-                });
+                }).Start();
             }
             catch(Exception ex)
             {

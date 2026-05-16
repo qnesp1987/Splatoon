@@ -12,8 +12,10 @@ using static System.Windows.Forms.VisualStyles.VisualStyleElement.TrackBar;
 
 namespace Splatoon.Gui.Tabs;
 
-public unsafe static class TabProjection
+public static unsafe class TabProjection
 {
+    private static uint NewBlacklistedDuty = 0;
+
     public static void Draw()
     {
         ImGuiEx.TextWrapped($"""
@@ -22,7 +24,7 @@ public unsafe static class TabProjection
             - Some attacks may be shown incorrectly, sometimes stuff that already telegraphed will be highlighted. It's strongly recommended to have a macro with "/splatoon pbl" command to instantly blacklist all currently displayed projected casts. Then you can send them to be included into plugin. 
             - If a layout imported and enabled for current attack, it will not be processed by projection. 
             """);
-        var impact = (S.Projection.LastSw * 1000.0) / Stopwatch.Frequency;
+        var impact = S.Projection.LastSw * 1000.0 / Stopwatch.Frequency;
         ImGuiEx.Text($"Projection Performance Impact: {impact:F1}ms");
         ImGui.SameLine();
         if(impact < 0.25f)
@@ -86,9 +88,9 @@ public unsafe static class TabProjection
                 ImGui.TableNextColumn();
                 ImGuiEx.Text(x.SuppressingLayouts.Print("\n"));
                 ImGui.TableNextColumn();
-                if(!P.Config.ProjectionBlacklistedActions.Any(a => a.Action == x.Descriptor.Id))
+                if (!P.Config.ProjectionBlacklistedActions.Any(a => a.Action == x.Descriptor.Id))
                 {
-                    if(ImGuiEx.SmallIconButton(FontAwesomeIcon.Times))
+                    if (ImGuiEx.SmallIconButton(FontAwesomeIcon.Times))
                     {
                         P.Config.ProjectionBlacklistedActions.Add(new()
                         {
@@ -102,13 +104,78 @@ public unsafe static class TabProjection
                 }
                 else
                 {
-                    if(ImGuiEx.SmallIconButton(FontAwesomeIcon.TrashRestore))
+                    if (ImGuiEx.SmallIconButton(FontAwesomeIcon.TrashRestore))
                     {
                         P.Config.ProjectionBlacklistedActions.RemoveAll(a => a.Action == x.Descriptor.Id);
                     }
                 }
 
-                if(col) ImGui.PopStyleColor();
+                if (col) ImGui.PopStyleColor();
+            }
+            ImGui.EndTable();
+        }
+
+        ImGui.Separator();
+
+        ImGuiEx.Text("Blacklisted Duties:");
+        var terr = Player.Territory;
+        if (terr != 0 && !P.Config.ProjectionBlacklistedDuties.Contains(terr))
+        {
+            if (ImGui.Button($"Blacklist current duty ({ExcelTerritoryHelper.GetName(terr, true)})"))
+            {
+                P.Config.ProjectionBlacklistedDuties.Add(terr);
+            }
+        }
+        else if (terr != 0)
+        {
+            ImGuiEx.Text(EColor.YellowBright, "Current duty is blacklisted.");
+        }
+
+        ImGui.SetNextItemWidth(250f);
+        if (ImGui.BeginCombo("##addDutyCombo", NewBlacklistedDuty == 0 ? "Select a duty..." : ExcelTerritoryHelper.GetName(NewBlacklistedDuty, true), ImGuiComboFlags.HeightLarge))
+        {
+            ImGuiEx.SetNextItemFullWidth();
+            ImGuiEx.FilteringInputTextWithHint("##searchDuty", "Filter by duty name...", out var filter);
+            foreach (var x in Svc.Data.GetExcelSheet<ContentFinderCondition>())
+            {
+                var name = x.Name.GetText();
+                if (string.IsNullOrEmpty(name)) continue;
+                if (!string.IsNullOrEmpty(filter) && !name.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
+
+                var terId = x.TerritoryType.RowId;
+                if (terId == 0) continue;
+
+                if (ImGui.Selectable($"{name} ({terId})", NewBlacklistedDuty == terId))
+                {
+                    NewBlacklistedDuty = terId;
+                }
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Blacklist selected"))
+        {
+            if (NewBlacklistedDuty != 0 && !P.Config.ProjectionBlacklistedDuties.Contains(NewBlacklistedDuty))
+            {
+                P.Config.ProjectionBlacklistedDuties.Add(NewBlacklistedDuty);
+                NewBlacklistedDuty = 0;
+            }
+        }
+
+        if (ImGuiEx.BeginDefaultTable("BlacDuty", ["~Duty", "##control"]))
+        {
+            foreach (var x in P.Config.ProjectionBlacklistedDuties)
+            {
+                ImGui.PushID(x.ToString());
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGuiEx.Text(ExcelTerritoryHelper.GetName(x, true));
+                ImGui.TableNextColumn();
+                if (ImGuiEx.SmallIconButton(FontAwesomeIcon.Trash))
+                {
+                    new TickScheduler(() => P.Config.ProjectionBlacklistedDuties.Remove(x));
+                }
+                ImGui.PopID();
             }
             ImGui.EndTable();
         }
@@ -134,7 +201,7 @@ public unsafe static class TabProjection
                     new TickScheduler(() => P.Config.ProjectionBlacklistedActions.Remove(x));
                 }
                 ImGui.PopID();
-            } 
+            }
             ImGui.EndTable();
         }
     }

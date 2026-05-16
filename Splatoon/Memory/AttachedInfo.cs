@@ -15,7 +15,6 @@ using Splatoon.Structures;
 
 namespace Splatoon.Memory;
 
-
 #nullable enable
 public static unsafe class AttachedInfo
 {
@@ -35,7 +34,7 @@ public static unsafe class AttachedInfo
     {
         Safe(delegate
         {
-            GameObject_ctor_hook = Svc.Hook.HookFromAddress<GameObject_ctor>(Svc.SigScanner.ScanText("48 8D 05 ?? ?? ?? ?? C7 81 ?? ?? ?? ?? ?? ?? ?? ?? 48 89 01 48 8B C1 C3"), GameObject_ctor_detour);
+            GameObject_ctor_hook = Svc.Hook.HookFromAddress<GameObject_ctor>(Svc.SigScanner.ScanText("48 8D 05 ?? ?? ?? ?? 48 89 01 33 C0 48 89 41 10 48 89 41 18 89 81 ?? ?? ?? ?? 48 89 81"), GameObject_ctor_detour);
             GameObject_ctor_hook.Enable();
         });
         Safe(delegate
@@ -46,7 +45,6 @@ public static unsafe class AttachedInfo
         });
         Svc.Framework.Update += Tick;
     }
-
 
     internal static void Dispose()
     {
@@ -169,18 +167,18 @@ public static unsafe class AttachedInfo
                 {
                     if(!Casters.Contains(b.Address))
                     {
-                        CastInfos[b.Address] = new(b.CastActionId, Environment.TickCount64 - (long)(b.CurrentCastTime * 1000));
+                        CastInfos[b.Address] = new(b.CastInfo.ActionId, Environment.TickCount64 - (long)(b.CastInfo.CurrentCastTime * 1000));
                         Casters.Add(b.Address);
                         string text;
                         if(P.Config.LogPosition)
                         {
-                            text = $"{b.Name} ({x.Position}) starts casting {b.CastActionId} ({b.NameId}>{b.CastActionId})";
+                            text = $"{b.Name} ({x.Position}) starts casting {b.CastInfo.ActionId} ({b.NameId}>{b.CastInfo.ActionId})";
                         }
                         else
                         {
-                            text = $"{b.Name} starts casting {b.CastActionId} ({b.NameId}>{b.CastActionId})";
+                            text = $"{b.Name} starts casting {b.CastInfo.ActionId} ({b.NameId}>{b.CastInfo.ActionId})";
                         }
-                        ScriptingProcessor.OnStartingCast(b.EntityId, b.CastActionId);
+                        ScriptingProcessor.OnStartingCast(b.EntityId, b.CastInfo.ActionId);
                         P.ChatMessageQueue.Enqueue(text);
                         if(P.Config.Logging)
                         {

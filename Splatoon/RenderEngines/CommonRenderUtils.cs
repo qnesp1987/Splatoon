@@ -1,4 +1,6 @@
-﻿using Dalamud.Game.ClientState.Objects.Types;
+﻿using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
+using ECommons.CSExtensions;
 using ECommons.ExcelServices;
 using ECommons.GameFunctions;
 using ECommons.MathHelpers;
@@ -25,13 +27,22 @@ public static unsafe class CommonRenderUtils
         var ret = s
         .Replace("$OBJECTID", $"{go.EntityId.Format()}")
         .Replace("$DATAID", $"{go.DataId.Format()}")
+        .Replace("$GIMMICKID", $"{go.Struct()->GimmickId.Format()}")
+        .Replace("$ESTATE", $"{go.Struct()->EventState.ToInt().Format()}")
+        .Replace("$EVENTID", $"{go.Struct()->EventId.Id.ToInt().Format()}")
         .Replace("$HITBOXR", $"{go.HitboxRadius:F1}")
         .Replace("$KIND", $"{go.ObjectKind}")
+        .Replace("$VFLAGS", $"{go.Struct()->RenderFlags}")
         .Replace("$NPCID", $"{go.Struct()->GetNameId().Format()}")
         .Replace("$LIFE", $"{go.GetLifeTimeSeconds():F1}")
-        .Replace("$DISTANCE", $"{Vector3.Distance((BasePlayer?.Position ?? Vector3.Zero), go.Position):F1}")
+        .Replace("$DISTANCE", $"{Vector3.Distance(BasePlayer?.Position ?? Vector3.Zero, go.Position):F1}")
         .Replace("\\n", "\n")
         .Replace("$MSTATUS", $"{(*(int*)(go.Address + 0x104)).Format()}");
+        if(go is IEventObj eobj)
+        {
+            ret = ret
+            .Replace("$ANIMATIONID", $"{eobj.AnimationId.Format()}");
+        }
         if(go is IBattleChara chr)
         {
             ret = ret
@@ -64,12 +75,12 @@ public static unsafe class CommonRenderUtils
                     {
                         if(chr.IsCasting())
                         {
-                            ret = ret.Replace(match.Groups[0].Value, $"{(chr.TotalCastTime - chr.CurrentCastTime).ToString(match.Groups[1].Value)}")
-                                .Replace("$CASTNAME", ExcelActionHelper.GetActionName(chr.CastActionId));
+                            ret = ret.Replace(match.Groups[0].Value, $"{(chr.CastInfo.TotalCastTime - chr.CastInfo.CurrentCastTime).ToString(match.Groups[1].Value)}")
+                                .Replace("$CASTNAME", ExcelActionHelper.GetActionName(chr.CastInfo.ActionId));
                         }
                         else
                         {
-                            ret = ret.Replace(match.Groups[0].Value, "").Replace("$CASTNAME", ExcelActionHelper.GetActionName(chr.CastActionId));
+                            ret = ret.Replace(match.Groups[0].Value, "").Replace("$CASTNAME", ExcelActionHelper.GetActionName(chr.CastInfo.ActionId));
                         }
                     }
                     else
@@ -89,7 +100,7 @@ public static unsafe class CommonRenderUtils
             }
             void castFallback()
             {
-                ret = ret.Replace("$CAST", chr.Struct()->GetCastInfo() != null ? $"[{chr.CastActionId.Format()}] {chr.CurrentCastTime}/{chr.TotalCastTime}" : "");
+                ret = ret.Replace("$CAST", chr.Struct()->GetCastInfo() != null ? $"[{chr.CastInfo.ActionId.Format()}] {chr.CastInfo.CurrentCastTime}/{chr.CastInfo.TotalCastTime}" : "");
             }
         }
         ret = ret
@@ -168,7 +179,7 @@ public static unsafe class CommonRenderUtils
 
     internal static bool IsElementObjectMatches(Layout layout, Element element, bool isTargetable, IGameObject gameObject)
     {
-        return 
+        return
             (!element.onlyTargetable || isTargetable)
             && (!element.onlyUnTargetable || !isTargetable)
             && (element.IsDead == null || element.IsDead == gameObject.IsDead)
@@ -185,7 +196,7 @@ public static unsafe class CommonRenderUtils
     {
         if(element.UseDistanceSourcePlaceholder)
         {
-            foreach(var p in element.DistanceSourcePlaceholder) 
+            foreach(var p in element.DistanceSourcePlaceholder)
             {
                 var pos = Utils.GetFacePositions(layout, element, go, p);
                 foreach(var x in pos)

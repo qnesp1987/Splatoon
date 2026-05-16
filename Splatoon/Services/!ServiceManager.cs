@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Splatoon.Services;
+
 public static class S
 {
     public static ThreadPool ThreadPool { get; private set; }
@@ -19,4 +20,6 @@ public static class S
     internal static MapEffectManager MapEffectManager { get; private set; }
     internal static Projection Projection { get; private set; }
     internal static LogHooks LogHooks { get; private set; }
+    internal static SystemLogProcessor SystemLogProcessor { get; private set; }
+    internal static ObjectEffectProcessor ObjectEffectProcessor { get; private set; }
 }
